@@ -1,0 +1,217 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Data Pipeline Stack
+
+Resources:
+  # # S3 Bucket for Source Data (Bronze Layer)
+  # SourceDataBucket:
+  #   Type: AWS::S3::Bucket
+  #   Properties:
+  #     BucketName: src-bkt
+  #     # Add any other bucket properties you need
+  # IAM Role for Step Functions Execution
+  StateMachineExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: StateMachineExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+
+      Policies:
+        - PolicyName: StateMachineExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                  - states:StopExecution
+                  # Add any other necessary permissions
+  # EventBridge Rule for Pipeline Trigger
+  PipelineEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: pipeline-run-rule
+      ScheduleExpression: "cron(0 0 * * ? *)" # Run daily at midnight UTC
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt DemoDataPipeLineStateMachine.Arn
+          Id: TargetDemoDataPipeLine
+
+  # Step Functions State Machine (DemoDataPipeLine)
+  # Attach the IAM role to the Step Functions state machine
+  DemoDataPipeLineStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      DefinitionString:
+        Fn::Sub:
+          - |
+            {
+              "Comment": "Demo Data Pipeline",
+              "StartAt": "ExtractData",
+              "States": {
+                "ExtractData": {
+                  "Type": "Task",
+                  "Resource": "${ExtractorLambdaArn}",
+                  "End": false,
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.ALL"],
+                      "Next": "NotifyFailure"
+                    }
+                  ],
+                  "Next": "ETLJob"
+                },
+                "ETLJob": {
+                  "Type": "Task",
+                  "Resource": "${DemoDataPipeLineETLJobArn}",
+                  "End": false,
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.ALL"],
+                      "Next": "NotifyFailure"
+                    }
+                  ],
+                  "Next": "Crawler"
+                },
+                "Crawler": {
+                  "Type": "Task",
+                  "Resource": "${DemoDataPipeLineCrawlerArn}",
+                  "End": false,
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.ALL"],
+                      "Next": "NotifyFailure"
+                    }
+                  ],
+                  "End": true
+                },
+                "NotifySuccess": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::sns:publish",
+                  "Parameters": {
+                    "TopicArn": "${DataPipelineDemoTopicArn}",
+                    "Message": "Data Pipeline Succeeded"
+                  },
+                  "End": true
+                },
+                "NotifyFailure": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::sns:publish",
+                  "Parameters": {
+                    "TopicArn": "${DataPipelineDemoTopicArn}",
+                    "Message": "Data Pipeline Failed"
+                  },
+                  "End": true
+                }
+                // Add more states for additional processing, if needed
+              }
+            }
+          - ExtractorLambdaArn: !GetAtt ExtractorLambda.Arn
+            DemoDataPipeLineETLJobArn: !Ref DemoDataPipeLineETLJob
+            DemoDataPipeLineCrawlerArn: !Ref DemoDataPipeLineCrawler
+            DataPipelineDemoTopicArn: !Ref DataPipelineDemoTopic
+
+      RoleArn: !GetAtt StateMachineExecutionRole.Arn
+  # Lambda Function for Data Extraction (Silver Layer)
+  ExtractorLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: ExtractorFunction
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: nodejs14.x
+      Code:
+        S3Bucket: your-code-bucket
+        S3Key: lambda-code.zip
+      # Add any other Lambda function properties
+
+  # IAM Role for Lambda Execution
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LambdaExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  # Add any other necessary permissions
+  GlueCrawlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: GlueCrawlerRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+
+  # AWS Glue ETL Job
+  DemoDataPipeLineETLJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: DemoDataPipeLineETLJob
+      Role: !GetAtt GlueJobRole.Arn
+      Command:
+        Name: glueetl
+        ScriptLocation: s3://your-etl-scripts-bucket/your-etl-script.py
+      # Add any other Glue job properties
+
+  # AWS Glue Crawler
+  DemoDataPipeLineCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: DemoDataPipeLineCrawler
+      Role: !GetAtt GlueCrawlerRole.Arn
+      DatabaseName: your_database_name
+      Targets:
+        S3Targets:
+          - Path: s3://your-data-location/
+      # Add any other Glue crawler properties
+
+  # IAM Role for Glue ETL Job
+  GlueJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: GlueJobRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: GlueJobPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  # Add any other necessary permissions
+  # SNS Topic for Data Pipeline Notifications
+  DataPipelineDemoTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Data Pipeline Notifications
