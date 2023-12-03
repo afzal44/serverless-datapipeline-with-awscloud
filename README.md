@@ -1,8 +1,8 @@
 # Building an End-to-End Data Pipeline with AWS Serverless Services
 
-* Introduction
+* Introduction 
 
-In today's data-driven world, organizations rely on efficient data pipelines to collect, process, and analyze data. AWS offers a powerful suite of serverless services that allow you to build scalable and cost-effective data pipelines. In this blog post, we will walk you through the steps of creating a data pipeline using AWS serverless services, from ingesting raw data to performing advanced analytics.
+In today's data-driven world, organizations rely on efficient data pipelines to collect, process, and analyze data. AWS offers a powerful suite of serverless services that allow you to build scalable and cost-effective data pipelines. In this blog post, we will walk you through the steps of creating a data pipeline using AWS serverless services, from ingesting raw data to performing advanced analytics.BLOG Link : https://www.qloudx.com/building-scalable-data-pipelines-with-aws-serverless-services-part-2/
 
 ## Architecture Diagram
 
